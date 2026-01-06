@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Code Video Player</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 800px;
+            width: 100%;
+            padding: 30px;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 2em;
+        }
+
+        .scanner-section {
+            margin-bottom: 30px;
+        }
+
+        #reader {
+            border: 2px solid #667eea;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+        }
+
+        button:hover {
+            background: #764ba2;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .video-section {
+            display: none;
+            margin-top: 30px;
+        }
+
+        .video-section.active {
+            display: block;
+        }
+
+        video {
+            width: 100%;
+            border-radius: 10px;
+            background: #000;
+            max-height: 500px;
+        }
+
+        .status {
+            text-align: center;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 8px;
+            font-weight: 500;
+        }
+
+        .status.info {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .status.success {
+            background: #e8f5e9;
+            color: #388e3c;
+        }
+
+        .status.error {
+            background: #ffebee;
+            color: #d32f2f;
+        }
+
+        .video-info {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f5f5f5;
+            border-radius: 8px;
+            word-break: break-all;
+        }
+
+        .video-info strong {
+            color: #667eea;
+        }
+
+        @media (max-width: 600px) {
+            h1 {
+                font-size: 1.5em;
+            }
+
+            .container {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📹 QR Code Video Player</h1>
+        
+        <div class="scanner-section">
+            <div id="reader"></div>
+            
+            <div class="controls">
+                <button id="startBtn">Start Scanner</button>
+                <button id="stopBtn" disabled>Stop Scanner</button>
+            </div>
+            
+            <div id="status" class="status info" style="display: none;">
+                Ready to scan QR code...
+            </div>
+        </div>
+
+        <div class="video-section" id="videoSection">
+            <video id="videoPlayer" controls>
+                Your browser does not support the video element.
+            </video>
+            <div class="video-info">
+                <strong>Video URL:</strong> <span id="videoUrl"></span>
+            </div>
+            <div class="controls" style="margin-top: 15px;">
+                <button id="scanAgainBtn">Scan Another Video</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Include html5-qrcode library -->
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    
+    <script>
+        let html5QrCode;
+        const reader = document.getElementById('reader');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const scanAgainBtn = document.getElementById('scanAgainBtn');
+        const videoSection = document.getElementById('videoSection');
+        const videoPlayer = document.getElementById('videoPlayer');
+        const videoUrlDisplay = document.getElementById('videoUrl');
+        const status = document.getElementById('status');
+
+        function showStatus(message, type = 'info') {
+            status.textContent = message;
+            status.className = `status ${type}`;
+            status.style.display = 'block';
+        }
+
+        function hideStatus() {
+            status.style.display = 'none';
+        }
+
+        function isValidVideoUrl(url) {
+            try {
+                const urlObj = new URL(url);
+                // Check for common video file extensions
+                const videoExtensions = ['.mp4', '.webm', '.ogg', '.mov', '.avi', '.mkv', '.m3u8'];
+                const hasVideoExtension = videoExtensions.some(ext => 
+                    urlObj.pathname.toLowerCase().includes(ext)
+                );
+                
+                // Also accept YouTube, Vimeo, and other video platforms
+                const videoHosts = ['youtube.com', 'youtu.be', 'vimeo.com', 'dailymotion.com'];
+                const isVideoHost = videoHosts.some(host => 
+                    urlObj.hostname.toLowerCase().includes(host)
+                );
+                
+                return hasVideoExtension || isVideoHost || true; // Accept all URLs for flexibility
+            } catch (e) {
+                return false;
+            }
+        }
+
+        function playVideo(url) {
+            if (!isValidVideoUrl(url)) {
+                showStatus('Invalid video URL. Please scan a valid video link.', 'error');
+                return;
+            }
+
+            // Stop the scanner
+            stopScanner();
+
+            // Show video section
+            videoSection.classList.add('active');
+            videoUrlDisplay.textContent = url;
+            videoPlayer.src = url;
+            videoPlayer.load();
+            
+            // Auto-play the video
+            videoPlayer.play().then(() => {
+                showStatus('Video is now playing!', 'success');
+                setTimeout(hideStatus, 3000);
+            }).catch(err => {
+                showStatus('Video loaded. Click play to start.', 'info');
+                console.error('Auto-play prevented:', err);
+            });
+
+            // Hide reader
+            reader.style.display = 'none';
+        }
+
+        function onScanSuccess(decodedText, decodedResult) {
+            console.log(`QR Code detected: ${decodedText}`);
+            playVideo(decodedText);
+        }
+
+        function onScanError(errorMessage) {
+            // Ignore scan errors (they're very frequent during scanning)
+            // console.warn(`QR Code scan error: ${errorMessage}`);
+        }
+
+        async function startScanner() {
+            try {
+                if (!html5QrCode) {
+                    html5QrCode = new Html5Qrcode("reader");
+                }
+
+                const config = { 
+                    fps: 10, 
+                    qrbox: { width: 250, height: 250 },
+                    aspectRatio: 1.0
+                };
+
+                await html5QrCode.start(
+                    { facingMode: "environment" }, // Use back camera
+                    config,
+                    onScanSuccess,
+                    onScanError
+                );
+
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+                showStatus('Scanner active. Point camera at QR code...', 'info');
+            } catch (err) {
+                showStatus(`Error starting scanner: ${err.message}`, 'error');
+                console.error('Error starting scanner:', err);
+            }
+        }
+
+        async function stopScanner() {
+            try {
+                if (html5QrCode && html5QrCode.isScanning) {
+                    await html5QrCode.stop();
+                    startBtn.disabled = false;
+                    stopBtn.disabled = true;
+                    hideStatus();
+                }
+            } catch (err) {
+                console.error('Error stopping scanner:', err);
+            }
+        }
+
+        function resetToScanner() {
+            videoSection.classList.remove('active');
+            videoPlayer.pause();
+            videoPlayer.src = '';
+            reader.style.display = 'block';
+            startScanner();
+        }
+
+        // Event listeners
+        startBtn.addEventListener('click', startScanner);
+        stopBtn.addEventListener('click', stopScanner);
+        scanAgainBtn.addEventListener('click', resetToScanner);
+
+        // Clean up on page unload
+        window.addEventListener('beforeunload', () => {
+            if (html5QrCode && html5QrCode.isScanning) {
+                html5QrCode.stop();
+            }
+        });
+    </script>
+</body>
+</html>
